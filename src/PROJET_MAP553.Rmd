@@ -1,0 +1,114 @@
+---
+title: "PROJET_MAP553"
+author: "Mohamed BABANA & Thy Vathana"
+date: "12/17/2019"
+output: pdf_document
+---
+
+```{r}
+library(corrplot)
+#setwd("~/Desktop/MAP_Proj/")
+load("DataProject.RData")
+```
+
+## le prix de vente et les variables numerique
+
+```{r}
+numeriques = names(which(sapply(train, is.numeric)))
+df_num = train[numeriques]
+names(df_num)
+
+```
+
+
+```{r}
+
+correlations = cor(df_num)
+cor_sorted <- as.matrix(sort(correlations[,'SalePrice'], decreasing = TRUE))
+
+corrplot(correlations, tl.col="black", tl.pos = "lt", tl.cex = 0.7,cl.cex = .7, number.cex=.7)
+corrplot(cor_sorted, tl.col="black", tl.pos = "lt", tl.cex = 0.7,cl.cex = .7, number.cex=.7)
+print(cor_sorted)
+```
+
+## Les variables les plus correl??es avec SalePrice sont :
+
+## OverallQual GrLivArea GarageCars GarageArea TotalBsmtSF 1stFlrSF FullBath TotRmsAbvGrd YearBuilt GarageYrBlt YearRemodAdd
+
+
+## le prix de vente avec les variables factorielles
+
+```{r}
+factorielles = names(which(sapply(train, is.factor)))
+df_fac = train[factorielles]
+SalePrice = train$SalePrice
+df_fac <-cbind(df_fac,SalePrice)
+print(df_fac)
+#names(df_fac)
+```
+
+```{r}
+m = lm(SalePrice ~ ., data=df_fac)
+summary(m)
+```
+
+## Les variables factorielles qui ont le plus d'impact sur Saleprice sont :
+## Neighborhood RoofMatl BsmtQual BsmtExposure KitchenQual LotConfig HouseStyle ExterQual Heating 
+## CentralAir GarageQual GarageCond GarageFinish BsmtFinType MSSubClass MSZoning LotShape Condition1
+## Condition2 Exterior1st
+
+## le premier model : model lina
+
+```{r}
+
+mod1 <- lm(SalePrice ~ OverallQual+GrLivArea+GarageArea+TotalBsmtSF+`1stFlrSF`+FullBath+
+             TotRmsAbvGrd+GarageCars+YearBuilt+GarageYrBlt+YearRemodAdd+Neighborhood+RoofMatl+BsmtQual+
+             BsmtExposure+KitchenQual+LotConfig+HouseStyle+ExterQual+Heating+CentralAir+GarageQual+
+             GarageCond+GarageFinish+BsmtFinType1+MSSubClass+MSZoning+LotShape+Condition1+Condition2+
+             Exterior1st, data=train)
+summary(mod1)
+
+AIC(mod1)
+```
+
+
+
+
+```{r}
+mod2 <- lm(SalePrice ~ ., data=train)
+AIC(mod2)
+#summary(mod2)
+```
+
+## 
+
+
+```{r pressure, echo=FALSE}
+mod <- lm(SalePrice ~ 1, data=train)
+select.variables.forward =  step(mod, scope = train)
+select.variables.backward =  step(mod2, scope ~1, direction = "backward", trace = FALSE)
+mod3 =  step(mod2, scope ~1, direction = "both", trace = FALSE)
+#summary(mod3)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r pressure, echo=FALSE}
+
+predict(mod1, newdata = train)
+predict(mod1, newdata = test)
+```
+
+
+```{r pressure, echo=FALSE}
+
+predict(mod2, newdata = train)
+predict(mod2, newdata = test)
+```
+
+
+```{r pressure, echo=FALSE}
+predict(mod3, newdata = train)
+predict(mod3, newdata = test)
+```
+

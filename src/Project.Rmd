@@ -1,0 +1,275 @@
+---
+title: "Project"
+author: "THY Vathana and Mohamed Babana"
+date: "12/20/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Introduction
+In this problem, we have a data set containing around 1460 observations. Each observation has 68 variables describing the state of the house which can have impact on the variable called $SalePrice$, which we aim to predict.
+
+Intuitively, the houses who come with an expensive price are usually those which are built with good quality materials, built recently, equipped with modern equipment, located in the town, easy to get access (connected by street)….
+
+We are going to try to understand the dependency of the $SalePrice$ in term of other variable in the following sections and finally, we will use some models to fit on the data set given.
+
+
+# 2. Exploratory Data Analysis/Initial Modeling
+Let’s get started by loading the data and see the $summary$ of the table $train$
+
+```{r,warning=FALSE,message=FALSE}
+library(knitr)
+library(corrplot)
+library(plyr)
+library(randomForest)
+library(ggplot2)
+library(GGally)
+```
+
+```{r,warning=FALSE,message=FALSE}
+load("DataProject.RData")
+summary(test)
+```
+
+```{r,warning=FALSE,message=FALSE}
+dim(train)
+dim(test)
+```
+So here, we have 1095 observations to train the model and 365 obervations to test the model trained.
+
+Let's try to visualize the $SalePrice$ variable.
+```{r,warning=FALSE,message=FALSE}
+ggplot(train, aes(x = SalePrice, fill = ..count..)) +
+  geom_histogram(binwidth = 5000) +
+  ggtitle("Figure 1 Histogram of SalePrice") +
+  ylab("Count of houses") +
+  xlab("Housing Price") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+$SalePrice$ is too skew to the right side and it is not normally distributed. To deal with this, we need to take log of $SalePrice$.
+
+```{r,warning=FALSE,message=FALSE}
+train$SalePrice <- log(train$SalePrice)
+ggplot(train, aes(x = SalePrice, fill = ..count..)) +
+  geom_histogram(binwidth = 0.05) +
+  ggtitle("Figure 2 Histogram of log SalePrice") +
+  ylab("Count of houses") +
+  xlab("Housing Price") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+By going through quickly in the summary of each variable in the data set, we have found some interesting variables which seem have impacts on the price of the house. Those variable are: MSZoning, Street, Utilities, BldgTYpe, OverallQual, YearBuilt, Garage variable...
+
+We are going to use $R$ to find out all the important variables for the price and see if our previous assumption is correct.
+
+# 3. Modeling and Diagnostics
+First of all, we will try to fit a very simple model. This model consists of doing a regression of $SalePrice$ in function of all other variables of the observations and then, we try to eliminate the variables having big $p-value$ one by one until there is no more. The reason why we are doing this is that the variables having $p-value$ bigger than 0.05 are not significative to be used to predict the price of the house.
+
+```{r,warning=FALSE,message=FALSE}
+reg1 <- lm(SalePrice~., data = train)
+summary(reg1)
+```
+
+
+```{r,warning=FALSE,message=FALSE}
+reg2 <- lm(SalePrice~. -Id -MSSubClass -Condition1 -Exterior2nd -Exterior1st -Utilities -ExterQual -Heating -SaleType -GarageArea -Electrical -GarageYrBlt -BsmtFullBath -BsmtFinType1 -Neighborhood -SaleCondition -LotConfig -LotShape -BldgType -MasVnrArea -BsmtCond -WoodDeckSF -TotRmsAbvGrd -Foundation -PavedDrive -GarageFinish -HouseStyle -Condition2 -LotFrontage -MasVnrType -YrSold -RoofStyle -ExterCond -Functional -MSZoning -HeatingQC -GarageCond -BsmtExposure -OpenPorchSF -BsmtFinSF1 -BsmtFinType2 -HalfBath -GarageType -LandSlope -`1stFlrSF` -GarageQual -YearRemodAdd -LandContour -BsmtHalfBath -CentralAir -MoSold -Street, data = train)
+summary(reg2)
+```
+
+Since we are using $R$, we should use the advantages of this program. In the following part, we will use some libraries in order to find the correlation of all variables and build another model using the variable which are strongly correlated to $SalePrice$.
+
+
+Let's combine the train and test set together. We will explain why later.
+```{r,warning=FALSE,message=FALSE}
+test$SalePrice <- log(test$SalePrice)
+all <- rbind(train, test)
+```
+
+Here, we make a set called $num$_$var$ which contains all the numcerical variables.
+```{r,warning=FALSE,message=FALSE}
+num_var <- which(sapply(all, is.numeric))
+length(num_var)
+num_var
+```
+Right here, we have 29 numerical variables including $Id$, which we will take out.
+
+```{r,warning=FALSE,message=FALSE}
+num_value <- all[,num_var]
+num_value$Id <- NULL #take out the column Id
+dim(num_value)
+```
+
+In the following part, we are calculating the correlation of all numerical variables.
+```{r,warning=FALSE,message=FALSE}
+cor_numVar <- cor(num_value, use="pairwise.complete.obs") #correlations of all numeric variables
+cor_sorted <- as.matrix(sort(cor_numVar[,'SalePrice'], decreasing = TRUE))
+
+#select only high corelations
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.5)))
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+corrplot.mixed(cor_numVar, tl.col="black", tl.pos = "lt")
+```
+
+The reason we do this only with the numerical variables, because when we calculate the correlation of all variables, including numerical and factorial variables, the result will not be significant since the correlation works only on the ordinal set and some categorical variables are not ordinal. We need to do some work in order to be able to use the factorial variables.
+
+```{r,warning=FALSE,message=FALSE}
+cat_var <- names(which(sapply(all, is.factor)))
+length(cat_var)
+cat_var
+```
+
+We have 39 factorial variables here. Since some of them are ordinal, we will transform those into number indicating the level: 1 for the lowest quality and 5 for the highest quality.
+
+So when we transform these variables, we need to make sure that the data in both train and test set must be tranformed. This is the reason why we combind both train and test set in the beginning.
+```{r,warning=FALSE,message=FALSE}
+all$Street<-as.integer(revalue(all$Street, c('Grvl'=0, 'Pave'=1))) #variable seem ordinal
+all$LotShape<-as.integer(revalue(all$LotShape, c('IR3'=0, 'IR2'=1, 'IR1'=2, 'Reg'=3)))
+all$LandSlope<-as.integer(revalue(all$LandSlope, c('Sev'=0, 'Mod'=1, 'Gtl'=2)))
+
+Masonry <- c('None'=0, 'BrkCmn'=0, 'BrkFace'=1, 'Stone'=2, 'CBlock'=3)
+all$MasVnrType<-as.integer(revalue(all$MasVnrType, Masonry))
+
+Qualities <- c('None' = 0, 'Po' = 1, 'Fa' = 2, 'TA' = 3, 'Gd' = 4, 'Ex' = 5)
+all$ExterQual<-as.integer(revalue(all$ExterQual, Qualities))
+all$ExterCond<-as.integer(revalue(all$ExterCond, Qualities))
+
+all$BsmtQual<-as.integer(revalue(all$BsmtQual, Qualities))
+all$BsmtCond<-as.integer(revalue(all$BsmtCond, Qualities))
+
+Exposure <- c('None'=0, 'No'=1, 'Mn'=2, 'Av'=3, 'Gd'=4)
+all$BsmtExposure<-as.integer(revalue(all$BsmtExposure, Exposure))
+
+FinType <- c('None'=0, 'Unf'=1, 'LwQ'=2, 'Rec'=3, 'BLQ'=4, 'ALQ'=5, 'GLQ'=6)
+all$BsmtFinType1<-as.integer(revalue(all$BsmtFinType1, FinType))
+all$BsmtFinType2<-as.integer(revalue(all$BsmtFinType2, FinType))
+
+all$HeatingQC<-as.integer(revalue(all$HeatingQC, Qualities))
+all$CentralAir<-as.integer(revalue(all$CentralAir, c('N'=0, 'Y'=1)))
+
+all$KitchenQual<-as.integer(revalue(all$KitchenQual, Qualities))
+
+all$Functional <- as.integer(revalue(all$Functional, c('Sal'=0, 'Sev'=1, 'Maj2'=2, 'Maj1'=3, 'Mod'=4, 'Min2'=5, 'Min1'=6, 'Typ'=7)))
+
+Finish <- c('None'=0, 'Unf'=1, 'RFn'=2, 'Fin'=3)
+all$GarageFinish<-as.integer(revalue(all$GarageFinish, Finish))
+all$GarageQual<-as.integer(revalue(all$GarageQual, Qualities))
+all$GarageCond<-as.integer(revalue(all$GarageCond, Qualities))
+
+all$PavedDrive<-as.integer(revalue(all$PavedDrive, c('N'=0, 'P'=1, 'Y'=2)))
+
+```
+
+Once again, now we have 48 numerical variables. Let's find the correlation again.
+```{r,warning=FALSE,message=FALSE}
+num_var <- which(sapply(all, is.numeric))
+length(num_var)
+#print(num_var)
+num_var
+```
+
+
+```{r,warning=FALSE,message=FALSE}
+num_value <- all[,num_var]
+num_value$Id <- NULL
+dim(num_value)
+```
+
+```{r,warning=FALSE,message=FALSE}
+cor_numVar <- cor(num_value, use="pairwise.complete.obs") #correlations of all numeric variables
+cor_sorted <- as.matrix(sort(cor_numVar[,'SalePrice'], decreasing = TRUE))
+
+
+#select only high corelations
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.5)))
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+corrplot.mixed(cor_numVar, tl.col="black", tl.pos = "lt")
+```
+
+We split the test and train set after transforming in order to fit the model.
+```{r,warning=FALSE,message=FALSE}
+tr <- all[1:1095,] #take out the train set
+tr <- tr[,CorHigh]
+
+reg4 <- lm(SalePrice ~ . -SalePrice -TotRmsAbvGrd -BsmtQual -ExterQual, data = tr )
+anova(reg4)
+```
+We can observe that we took out some variables: TotRmsAbvGrd, BsmtQual and ExterQual. These three variables have high correlation with $SalePrice$, but we can take it out since they are highly correlated with other variables.
+
+Now, let's see the categorical variables. There are only 20 of them now.
+```{r,warning=FALSE,message=FALSE}
+cat_var <- names(which(sapply(all, is.factor)))
+length(cat_var)
+cat_var
+```
+
+
+
+```{r,warning=FALSE,message=FALSE}
+cat_value <- all[,cat_var]
+dim(cat_value)
+length(cat_var)
+```
+
+We can't find the correlation of the categorical variables using the correlation. One way possible is to use the library $RandomForest$ to help us find this.
+```{r}
+set.seed(2018)
+quick_RF <- randomForest(x=all[1:1095,-67], y=all$SalePrice[1:1095], ntree=100,importance=TRUE)
+imp_RF <- importance(quick_RF)
+imp_DF <- data.frame(Variables = row.names(imp_RF), MSE = imp_RF[,1])
+imp_DF <- imp_DF[order(imp_DF$MSE, decreasing = TRUE),]
+
+ggplot(imp_DF[1:20,], aes(x=reorder(Variables, MSE), y=MSE, fill=MSE)) + geom_bar(stat = 'identity') + labs(x = 'Variables', y= '% increase MSE if variable is randomly permuted') + coord_flip() + theme(legend.position="none")
+```
+
+As result, we found Neighborhood, MSSubClass and Exterior1st as the three most important categorical variables for $SalePrice$.
+
+In this part, we are fitting the new model by adding the three variables above.
+```{r,warning=FALSE,message=FALSE}
+tr <- all[1:1095,]
+tr <- tr[,CorHigh]
+tr$Neighborhood <- all$Neighborhood[1:1095]
+tr$MSSubClass <- all$MSSubClass[1:1095]
+tr$Exterior1st <- all$Exterior1st[1:1095]
+reg5 <- lm(SalePrice ~ . - -SalePrice -TotRmsAbvGrd -BsmtQual -ExterQual, data = tr )
+summary(reg5)
+anova(reg5)
+```
+
+By running $anova$, this shows that the three variables are significative to be used in this model in order to predict the $SalePrice$.
+```{r}
+library(forecast)
+#use predict() to make prediction on a new set
+te <-all[1096:1460,]
+te <- te[-c(132,222),]
+te$SalePrice <- log(te$SalePrice)
+pred1 <- predict(reg5,te,type = "response")
+residuals <- te$SalePrice - pred1
+reg5_pred <- data.frame("Predicted" = pred1, "Actual" = te$SalePrice, "Residual" = residuals)
+accuracy(pred1, te$SalePrice)
+```
+As result of prediction, our model predicts well with a good score of prediction. This model ($reg5$) seem be more understandable if we compare to the last model ($reg2$) even though $reg2$ got a better score on $Residual standard error$, $Adjusted R-squared$ and $F-statistic$, but the different is not quite big.
+
+# 5. Discussion
+We have seen that in order to be able to predict $SalePrice$, we have many steps to do in order to get the data set ready for the fitting. By the way, a big part of the project depends on the $Pre-processing$ which is very important. In my research, I have encountered some limitations like the case where one categorical variable appear in the test set, but not in the train set. I need to take it out in order to assure that the prediction works.
+
+In conclusion, the last model seem more realistic in term of dependence. This model depend on many variables that we have guessed since the first part of the project.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
